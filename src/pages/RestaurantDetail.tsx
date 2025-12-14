@@ -32,23 +32,34 @@ export default function RestaurantDetail() {
   }, [id]);
 
   const loadRestaurant = async () => {
-    if (!id) return;
+  if (!id) return;
 
-    setIsLoading(true);
-    const { data, error } = await supabase
-      .from('restaurants')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+  setIsLoading(true);
+  try {
+    const res = await fetch(`/api/restaurant?id=${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('load failed');
+    const data = await res.json();
 
-    if (error) {
-      console.error('Error loading restaurant:', error);
-      setRestaurant(null);
-    } else {
-      setRestaurant(data);
-    }
+    setRestaurant({
+      id,
+      name: data.name,
+      address: data.addr,
+      lat: Number(data.y), // 좌표계 주의 (필요시 변환)
+      lng: Number(data.x),
+      menu: [],
+      category: '',
+      rating: 0,
+      review_count: 0,
+      image: '',
+      description: '',
+    });
+  } catch (e) {
+    console.error(e);
+    setRestaurant(null);
+  } finally {
     setIsLoading(false);
-  };
+  }
+};
 
   // 지도 생성
   useEffect(() => {

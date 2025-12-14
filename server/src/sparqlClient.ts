@@ -1,27 +1,31 @@
-import 'dotenv/config';
-import SparqlClient from 'sparql-http-client';
+import fetch from 'node-fetch';
 
-const base = process.env.FUSEKI_URL!;
-const dataset = process.env.FUSEKI_DATASET!;
-const queryPath = process.env.FUSEKI_QUERY || '/sparql';
-const updatePath = process.env.FUSEKI_UPDATE || '/update';
+const ENDPOINT = 'http://203.234.62.168:3030/kofd/sparql';
 
-export const sparql = new SparqlClient({
-  endpointUrl: `${base}/${dataset}${queryPath}`,
-  updateUrl: `${base}/${dataset}${updatePath}`,
-  user: process.env.FUSEKI_USER,
-  password: process.env.FUSEKI_PASSWORD
-});
-
-export async function select<T = Record<string, any>>(query: string): Promise<T[]> {
-  const stream = await (sparql as any).query.select(query, {
-    headers: { accept: 'application/sparql-results+json' }
+export async function select<T = any>(query: string): Promise<T[]> {
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Accept': 'application/sparql-results+json',
+    },
+    body: new URLSearchParams({
+      query,
+    }).toString(),
   });
-  const rows: T[] = [];
-  for await (const row of stream) {
-    const obj: any = {};
-    for (const [k, v] of Object.entries(row)) obj[k] = (v as any).value;
-    rows.push(obj);
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Fuseki error ${res.status}: ${text}`);
   }
-  return rows;
+
+  const json = await res.json();
+
+  return json.results.bindings.map((row: any) => {
+    const obj: any = {};
+    for (const k in row) {
+      obj[k] = row[k].value;
+    }
+    return obj;
+  });
 }

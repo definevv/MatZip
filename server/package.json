@@ -2,7 +2,7 @@
   "name": "restaurant-api",
   "private": true,
   "scripts": {
-    "dev": "nodemon",
+    "dev": "nodemon src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },

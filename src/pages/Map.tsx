@@ -11,6 +11,22 @@ import {
 } from '../utils/recentSearches';
 import { loadKakaoMap } from '../utils/loadKakaoMap';
 
+/* =========================
+   🔗 외부(SearchResults) 연동용
+   ========================= */
+let externalSetFilteredRestaurants:
+  | ((r: Restaurant[]) => void)
+  | null = null;
+
+/** SearchResults.tsx 에서 호출 */
+export function updateMapFromSearch(restaurants: Restaurant[]) {
+  if (externalSetFilteredRestaurants) {
+    externalSetFilteredRestaurants(restaurants);
+  }
+}
+
+/* ========================= */
+
 interface Restaurant {
   id: string;
   name: string;
@@ -28,6 +44,7 @@ interface Restaurant {
 export default function Map() {
   const navigate = useNavigate();
   const mapRef = useRef<HTMLDivElement>(null);
+
   const [map, setMap] = useState<any>(null);
   const [markers, setMarkers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,9 +53,22 @@ export default function Map() {
   const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  /* =========================
+     🔗 외부에서 상태 제어 가능하게 연결
+     ========================= */
+  useEffect(() => {
+    externalSetFilteredRestaurants = setFilteredRestaurants;
+    return () => {
+      externalSetFilteredRestaurants = null;
+    };
+  }, []);
+
+  /* ========================= */
+
   useEffect(() => {
     setRecentSearches(getRecentSearches());
     loadAllRestaurants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadAllRestaurants = async () => {
@@ -57,7 +87,9 @@ export default function Map() {
     setIsLoading(false);
   };
 
-  // 지도 생성
+  /* =========================
+     지도 생성
+     ========================= */
   useEffect(() => {
     if (!mapRef.current || map) return;
 
@@ -67,20 +99,19 @@ export default function Map() {
           const center = new kakao.maps.LatLng(37.5665, 126.9780);
           const newMap = new kakao.maps.Map(mapRef.current!, {
             center,
-            level: 5, // 여러 식당을 보기 위해 약간 멀게
+            level: 5,
           });
           setMap(newMap);
         });
       })
-      .catch((err) => {
-        console.error(err);
-      });
+      .catch((err) => console.error(err));
   }, [map]);
 
-  // 식당 목록이 바뀔 때마다 마커 갱신
+  /* =========================
+     식당 목록 변경 → 마커 갱신
+     ========================= */
   useEffect(() => {
     if (!map) return;
-
     const kakao = window.kakao;
 
     // 기존 마커 제거
@@ -103,10 +134,12 @@ export default function Map() {
 
       setMarkers(newMarkers);
 
-      // bounds 맞추기
+      // bounds 자동 조정
       const bounds = new kakao.maps.LatLngBounds();
       filteredRestaurants.forEach((restaurant) => {
-        bounds.extend(new kakao.maps.LatLng(restaurant.lat, restaurant.lng));
+        bounds.extend(
+          new kakao.maps.LatLng(restaurant.lat, restaurant.lng)
+        );
       });
       map.setBounds(bounds);
     } else {
@@ -119,41 +152,38 @@ export default function Map() {
     navigate(`/restaurant/${id}`);
   };
 
+  /* =========================
+     Map 페이지 자체 검색 (기존 유지)
+     ========================= */
   const handleSearch = async (query: string) => {
-    if (query.trim()) {
-      addRecentSearch(query);
-      setCurrentSearchQuery(query);
-      setIsLoading(true);
+    if (!query.trim()) return;
 
-      const searchLower = query.toLowerCase();
-      const { data, error } = await supabase
-        .from('restaurants')
-        .select('*')
-        .or(
-          `name.ilike.%${searchLower}%,category.ilike.%${searchLower}%,address.ilike.%${searchLower}%,description.ilike.%${searchLower}%`
-        );
+    addRecentSearch(query);
+    setCurrentSearchQuery(query);
+    setIsLoading(true);
 
-      if (error) {
-        console.error('Error searching restaurants:', error);
-        setFilteredRestaurants([]);
-      } else {
-        const filtered = (data || []).filter((restaurant) => {
-          return (
-            restaurant.menu?.some((item: string) =>
-              item.toLowerCase().includes(searchLower)
-            ) ||
-            restaurant.name.toLowerCase().includes(searchLower) ||
-            restaurant.category.toLowerCase().includes(searchLower) ||
-            restaurant.address.toLowerCase().includes(searchLower) ||
-            restaurant.description?.toLowerCase().includes(searchLower)
-          );
-        });
-        setFilteredRestaurants(filtered);
-      }
+    const searchLower = query.toLowerCase();
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .or(
+        `name.ilike.%${searchLower}%,category.ilike.%${searchLower}%,address.ilike.%${searchLower}%,description.ilike.%${searchLower}%`
+      );
 
-      setRecentSearches(getRecentSearches());
-      setIsLoading(false);
+    if (error) {
+      console.error('Error searching restaurants:', error);
+      setFilteredRestaurants([]);
+    } else {
+      const filtered = (data || []).filter((restaurant) =>
+        restaurant.menu?.some((item: string) =>
+          item.toLowerCase().includes(searchLower)
+        )
+      );
+      setFilteredRestaurants(filtered);
     }
+
+    setRecentSearches(getRecentSearches());
+    setIsLoading(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -177,27 +207,29 @@ export default function Map() {
     loadAllRestaurants();
   };
 
+  /* =========================
+     UI
+     ========================= */
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-6">
-          <form onSubmit={handleSubmit} className="relative mb-6">
-            <div className="relative flex items-center bg-white rounded-full shadow-md border border-gray-200 px-6 py-4">
+          <form onSubmit={handleSubmit} className="mb-6">
+            <div className="flex items-center bg-white rounded-full shadow border px-6 py-4">
               <Search className="w-5 h-5 text-gray-400 mr-3" />
               <input
-                type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="검색어를 입력해주세요."
-                className="flex-1 outline-none text-gray-900 placeholder-gray-400"
+                className="flex-1 outline-none"
               />
               {currentSearchQuery && (
                 <button
                   type="button"
                   onClick={handleClearSearch}
-                  className="ml-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="ml-3 p-2 hover:bg-gray-100 rounded-lg"
                 >
                   <X className="w-5 h-5 text-gray-600" />
                 </button>
@@ -210,7 +242,7 @@ export default function Map() {
               {recentSearches.map((search) => (
                 <button
                   key={search.id}
-                  className="group flex items-center gap-2 px-5 py-2.5 bg-white rounded-full border border-gray-200 hover:border-primary transition-colors shadow-sm"
+                  className="group flex items-center gap-2 px-5 py-2.5 bg-white rounded-full border shadow-sm"
                 >
                   <span
                     onClick={() => handleRecentSearchClick(search.text)}
@@ -223,10 +255,9 @@ export default function Map() {
                       e.stopPropagation();
                       handleRemoveSearch(search.id);
                     }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label="삭제"
+                    className="opacity-0 group-hover:opacity-100"
                   >
-                    <X className="w-4 h-4 text-gray-500 hover:text-gray-700" />
+                    <X className="w-4 h-4 text-gray-500" />
                   </button>
                 </button>
               ))}
@@ -235,7 +266,7 @@ export default function Map() {
         </div>
 
         <div className="flex gap-4 h-[calc(100vh-280px)]">
-          <div className="flex-1 bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="flex-1 bg-white rounded-2xl shadow overflow-hidden">
             <div ref={mapRef} className="w-full h-full">
               {!window.kakao && (
                 <div className="h-full flex items-center justify-center text-gray-500">
@@ -245,55 +276,42 @@ export default function Map() {
             </div>
           </div>
 
-          <div className="w-96 bg-white rounded-2xl shadow-lg overflow-hidden">
-            <div className="p-6 border-b border-gray-200">
+          <div className="w-96 bg-white rounded-2xl shadow overflow-hidden">
+            <div className="p-6 border-b">
               <h2 className="text-xl font-bold text-primary">
-                {currentSearchQuery ? `"${currentSearchQuery}" 검색 결과` : '음식점 목록'}
+                {currentSearchQuery
+                  ? `"${currentSearchQuery}" 검색 결과`
+                  : '음식점 목록'}
               </h2>
               <p className="text-sm text-gray-600 mt-1">
                 {filteredRestaurants.length}개의 음식점
               </p>
             </div>
+
             <div className="overflow-y-auto h-[calc(100%-80px)]">
               {isLoading ? (
                 <div className="flex items-center justify-center h-full text-gray-500">
-                  <p>로딩 중...</p>
+                  로딩 중...
                 </div>
-              ) : filteredRestaurants.length > 0 ? (
+              ) : (
                 <div className="space-y-3 p-4">
                   {filteredRestaurants.map((restaurant) => (
                     <div
                       key={restaurant.id}
                       onClick={() => handleRestaurantClick(restaurant.id)}
-                      className="bg-white rounded-xl border border-gray-200 hover:border-primary hover:shadow-md transition-all cursor-pointer p-4"
+                      className="rounded-xl border hover:shadow cursor-pointer p-4"
                     >
-                      <div className="flex gap-3">
-                        <img
-                          src={restaurant.image}
-                          alt={restaurant.name}
-                          className="w-20 h-20 rounded-lg object-cover"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 truncate">
-                            {restaurant.name}
-                          </h3>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {restaurant.category}
-                          </p>
-                          <p className="text-sm text-gray-500 truncate mt-1">
-                            {restaurant.address}
-                          </p>
-                        </div>
-                      </div>
+                      <h3 className="font-semibold">{restaurant.name}</h3>
+                      <p className="text-sm text-gray-600">
+                        {restaurant.category}
+                      </p>
+                      <p className="text-sm text-gray-500 truncate">
+                        {restaurant.address}
+                      </p>
                     </div>
                   ))}
                 </div>
-              ) : currentSearchQuery ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-                  <Search className="w-16 h-16 mb-4 text-gray-300" />
-                  <p className="text-lg font-medium">등록되지 않은 정보입니다</p>
-                </div>
-              ) : null}
+              )}
             </div>
           </div>
         </div>
