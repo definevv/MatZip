@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'GyeonggiMillenniumTitle';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2410-3@1.0/Title_Light.woff') format('woff');
+  font-weight: 300;
+  font-display: swap;
+}
+
+body {
+  font-family: 'GyeonggiMillenniumTitle', sans-serif;
+}
