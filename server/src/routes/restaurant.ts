@@ -1,12 +1,14 @@
-// server/src/routes/restaurant.ts
 import { Router } from 'express';
 import { select } from '../sparqlClient';
+import { convertTMToWGS84 } from '../utils/convertTMToWGS84';
 
 export const restaurant = Router();
 
 restaurant.get('/', async (req, res) => {
   const id = String(req.query.id || '');
-  if (!id) return res.status(400).json({ error: 'id required' });
+  if (!id) {
+    return res.status(400).json({ error: 'id required' });
+  }
 
   const sparql = `
 PREFIX schema: <http://schema.org/>
@@ -24,7 +26,6 @@ SELECT ?name ?addr ?x ?y ?menuName WHERE {
     OPTIONAL { ?rest kofd:x5174 ?x }
     OPTIONAL { ?rest kofd:y5174 ?y }
 
-    # ✅ 메뉴 붙이기
     OPTIONAL {
       ?menu a kofd:Menu ;
             schema:name ?menuName ;
@@ -36,23 +37,55 @@ SELECT ?name ?addr ?x ?y ?menuName WHERE {
 
   try {
     const rows = await select<any>(sparql);
-    if (!rows.length) return res.status(404).json(null);
+    if (!rows.length) {
+      return res.status(404).json(null);
+    }
 
-    // ✅ rows 여러 줄(메뉴 개수만큼) → 1개 객체로 합치기
+    /** =========================
+     *  기본 정보
+     ========================= */
     const base = rows[0];
-    const menu = rows
-      .map((r) => r.menuName)
-      .filter(Boolean);
 
-    const uniqueMenu = Array.from(new Set(menu));
+    /** =========================
+     *  메뉴 병합 (중복 제거)
+     ========================= */
+    const menu = Array.from(
+      new Set(
+        rows
+          .map((r) => r.menuName)
+          .filter(Boolean)
+      )
+    );
 
+    /** =========================
+     *  좌표 변환 (TM → WGS84)
+     ========================= */
+    let lat: number | null = null;
+    let lng: number | null = null;
+
+    if (base.x && base.y) {
+      try {
+        const converted = await convertTMToWGS84(
+          Number(base.x),
+          Number(base.y)
+        );
+        lat = converted.lat;
+        lng = converted.lng;
+      } catch (e) {
+        console.error('[restaurant] coord convert error:', e);
+      }
+    }
+
+    /** =========================
+     *  응답
+     ========================= */
     res.json({
       id,
       name: base.name ?? '',
       address: base.addr ?? '',
-      x: base.x ? Number(base.x) : null,
-      y: base.y ? Number(base.y) : null,
-      menu: uniqueMenu,
+      lat,
+      lng,
+      menu,
     });
   } catch (e: any) {
     console.error('[restaurant] error:', e.message);

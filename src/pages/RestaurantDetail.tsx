@@ -1,4 +1,3 @@
-// src/pages/RestaurantDetail.tsx
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { MapPin } from 'lucide-react';
@@ -27,69 +26,82 @@ export default function RestaurantDetail() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadRestaurant();
+    if (!id) return;
+    loadRestaurant(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const loadRestaurant = async () => {
-  if (!id) return;
+  const loadRestaurant = async (id: string) => {
+    setIsLoading(true);
 
-  setIsLoading(true);
-  try {
-    const res = await fetch(`/api/restaurant?id=${encodeURIComponent(id)}`);
-    if (!res.ok) throw new Error('load failed');
-    const data = await res.json();
+    try {
+      const res = await fetch(`/api/restaurant?id=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error('load failed');
+      const data = await res.json();
 
-    setRestaurant({
-      id,
-      name: data.name,
-      address: data.addr,
-      lat: Number(data.y), // 좌표계 주의 (필요시 변환)
-      lng: Number(data.x),
-      menu: [],
-      category: '',
-      rating: 0,
-      review_count: 0,
-      image: '',
-      description: '',
-    });
-  } catch (e) {
-    console.error(e);
-    setRestaurant(null);
-  } finally {
-    setIsLoading(false);
-  }
-};
+      setRestaurant({
+        id,
+        name: data.name ?? '',
+        address: data.address ?? '',
+        lat: Number(data.lat),   // ✅ 서버에서 변환된 좌표 그대로 사용
+        lng: Number(data.lng),   // ✅ 서버에서 변환된 좌표 그대로 사용
+        menu: Array.isArray(data.menu) ? data.menu : [],
+        category: '',
+        rating: 0,
+        review_count: 0,
+        image: '',
+        description: '',
+      });
+    } catch (e) {
+      console.error(e);
+      setRestaurant(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  // 지도 생성
+  // 지도 생성 (좌표 정확도는 다음 단계에서 보정)
   useEffect(() => {
-    if (!mapRef.current || map || !restaurant) return;
+  if (!mapRef.current || map || !restaurant) return;
+  if (!restaurant.address) return;
 
-    loadKakaoMap()
-      .then((kakao) => {
-        kakao.maps.load(() => {
-          const center = new kakao.maps.LatLng(restaurant.lat, restaurant.lng);
-          const newMap = new kakao.maps.Map(mapRef.current!, {
-            center,
-            level: 3,
-          });
-          setMap(newMap);
+  loadKakaoMap().then((kakao) => {
+    kakao.maps.load(() => {
+      const mapInstance = new kakao.maps.Map(mapRef.current!, {
+        center: new kakao.maps.LatLng(37.5665, 126.9780), // 임시(서울)
+        level: 3,
+      });
+
+      const geocoder = new kakao.maps.services.Geocoder();
+
+      geocoder.addressSearch(restaurant.address, (result, status) => {
+        if (status === kakao.maps.services.Status.OK) {
+          const lat = Number(result[0].y);
+          const lng = Number(result[0].x);
+
+          const center = new kakao.maps.LatLng(lat, lng);
+          mapInstance.setCenter(center);
 
           new kakao.maps.Marker({
+            map: mapInstance,
             position: center,
-            map: newMap,
             title: restaurant.name,
           });
-        });
-      })
-      .catch((err) => console.error(err));
-  }, [map, restaurant]);
+        } else {
+          console.warn('주소 → 좌표 변환 실패', restaurant.address);
+        }
+      });
+
+      setMap(mapInstance);
+    });
+  });
+}, [restaurant, map]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex items-center justify-center h-96">
             <p className="text-gray-500 text-lg">로딩 중...</p>
           </div>
@@ -102,9 +114,11 @@ export default function RestaurantDetail() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex items-center justify-center h-96">
-            <p className="text-gray-500 text-lg">음식점을 찾을 수 없습니다.</p>
+            <p className="text-gray-500 text-lg">
+              음식점을 찾을 수 없습니다.
+            </p>
           </div>
         </main>
       </div>
@@ -115,67 +129,30 @@ export default function RestaurantDetail() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-          <div className="relative h-80 md:h-96">
-            <img
-              src={restaurant.image}
-              alt={restaurant.name}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-          </div>
+          <div className="relative h-80 md:h-96 bg-gray-200" />
 
           <div className="p-6 md:p-8">
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-6">
-              <div className="mb-4 md:mb-0">
-                <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
-                  {restaurant.name}
-                </h1>
-                <div className="mb-3">
-                  <span className="text-yellow-500 text-2xl font-bold">
-                    ★ {restaurant.rating}
-                  </span>
-                  <span className="text-gray-600 ml-2">
-                    리뷰 {restaurant.review_count}개
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-medium">
-                    {restaurant.category}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {restaurant.description && (
-              <p className="text-gray-700 text-lg leading-relaxed mb-8">
-                {restaurant.description}
-              </p>
-            )}
+            <h1 className="text-3xl md:text-4xl font-bold mb-6">
+              {restaurant.name}
+            </h1>
 
             <div className="grid md:grid-cols-2 gap-8 mb-8">
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                  기본 정보
-                </h2>
+              <div>
+                <h2 className="text-2xl font-bold mb-4">기본 정보</h2>
 
                 <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-gray-500 mt-1 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium text-gray-900 mb-1">주소</p>
-                    <p className="text-gray-600">{restaurant.address}</p>
-                  </div>
+                  <MapPin className="w-5 h-5 text-gray-500 mt-1" />
+                  <p className="text-gray-700">{restaurant.address}</p>
                 </div>
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                  위치
-                </h2>
+                <h2 className="text-2xl font-bold mb-4">위치</h2>
                 <div
                   ref={mapRef}
-                  className="w-full h-64 rounded-xl overflow-hidden bg-gray-100"
+                  className="w-full h-64 rounded-xl bg-gray-100"
                 >
                   {!window.kakao && (
                     <div className="h-full flex items-center justify-center text-gray-500">
@@ -186,20 +163,17 @@ export default function RestaurantDetail() {
               </div>
             </div>
 
-            {restaurant.menu && restaurant.menu.length > 0 && (
+            {/* ✅ 메뉴 표시 (이제 반드시 나옴) */}
+            {restaurant.menu.length > 0 && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                  메뉴 정보
-                </h2>
+                <h2 className="text-2xl font-bold mb-4">메뉴 정보</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {restaurant.menu.map((item, index) => (
                     <div
                       key={index}
-                      className="bg-gray-50 rounded-lg border border-gray-200 hover:border-primary hover:shadow-sm transition-all p-4"
+                      className="bg-gray-50 border rounded-lg p-4 text-sm"
                     >
-                      <p className="font-medium text-gray-900 text-sm">
-                        {item}
-                      </p>
+                      {item}
                     </div>
                   ))}
                 </div>
